@@ -3,6 +3,8 @@ import json
 import requests
 from urllib.parse import urlencode
 
+requests.post(os.getenv("DISCORD_WEBHOOK"), json={"content": "✅ Discord webhook test from GitHub Actions"})
+
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 if not DISCORD_WEBHOOK:
     raise RuntimeError("Missing DISCORD_WEBHOOK secret")
