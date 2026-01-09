@@ -3,6 +3,7 @@ import json
 import requests
 from urllib.parse import urlencode
 
+# ===== CONFIG =====
 DISCORD_WEBHOOK = os.getenv("DISCORD_WEBHOOK")
 if not DISCORD_WEBHOOK:
     raise RuntimeError("Missing DISCORD_WEBHOOK secret")
@@ -13,6 +14,7 @@ STATE_FILE = "state.json"
 GAMMA_BASE = "https://gamma-api.polymarket.com"
 DATA_BASE = "https://data-api.polymarket.com"
 
+# ===== HELPERS =====
 def post_discord(msg: str):
     requests.post(DISCORD_WEBHOOK, json={"content": msg}, timeout=15)
 
@@ -35,7 +37,6 @@ def get_proxy_wallet(username: str) -> str:
 
     for p in profiles:
         if p.get("proxyWallet"):
-            # best-effort match
             for field in ("username", "userName", "name", "pseudonym"):
                 v = p.get(field)
                 if v and username.lower() in str(v).lower():
@@ -64,6 +65,7 @@ def normalize(raw_positions):
         }
     return out
 
+# ===== MAIN =====
 def main():
     state = load_state()
     proxy = state.get("proxyWallet") or get_proxy_wallet(USERNAME)
@@ -71,7 +73,7 @@ def main():
     curr = normalize(fetch_positions(proxy))
     prev = state.get("positions", {})
 
-    # First run: store state, don't spam
+    # First run: store state, no alerts
     if not prev:
         state["proxyWallet"] = proxy
         state["positions"] = curr
@@ -79,27 +81,24 @@ def main():
         print("Initialized (no alerts).")
         return
 
+    # ONLY detect newly opened positions
     added = [k for k in curr.keys() if k not in prev]
-    removed = [k for k in prev.keys() if k not in curr]
-    changed = [k for k in curr.keys() & prev.keys() if abs(curr[k]["size"] - prev[k]["size"]) > 1e-6]
 
-    if added or removed or changed:
-        lines = [f"📌 Position change for @{USERNAME}"]
+    if added:
+        lines = [f"🟢 NEW POSITION OPENED by @{USERNAME}"]
         for k in added:
             p = curr[k]
-            link = f"https://polymarket.com/market/{p['slug']}" if p["slug"] else f"https://polymarket.com/@{USERNAME}?tab=positions"
-            lines.append(f"🟢 OPENED: {p['title']} — {p['outcome']} | size={p['size']:.4f} | {link}")
-        for k in changed:
-            before = prev[k]["size"]
-            after = curr[k]["size"]
-            p = curr[k]
-            link = f"https://polymarket.com/market/{p['slug']}" if p["slug"] else f"https://polymarket.com/@{USERNAME}?tab=positions"
-            lines.append(f"🟡 UPDATED: {p['title']} — {p['outcome']} | {before:.4f} → {after:.4f} | {link}")
-        for k in removed:
-            p = prev[k]
-            lines.append(f"🔴 CLOSED: {p.get('title','')} — {p.get('outcome','')}")
+            link = (
+                f"https://polymarket.com/market/{p['slug']}"
+                if p["slug"]
+                else f"https://polymarket.com/@{USERNAME}?tab=positions"
+            )
+            lines.append(
+                f"{p['title']} — {p['outcome']} | size={p['size']:.4f} | {link}"
+            )
         post_discord("\n".join(lines))
 
+    # Save state
     state["proxyWallet"] = proxy
     state["positions"] = curr
     save_state(state)
